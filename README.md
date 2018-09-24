@@ -9,7 +9,7 @@ Go build
 ./.exe
 //
 
-To access the application UI, navigate to "localhost:8000".
+To access the application UI, navigate to "localhost:8000/main".
 
 JSON data is available by navigating to "localhost:8000/current/{location}" or "localhost:8000/forecast/{location}/{days}"
 

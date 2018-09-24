@@ -1,4 +1,4 @@
-# Forecast_app
+# Weather monitoring application
 Provides current and forecast weather for N locations
 
 On windows, compile by running RunMe.bat (go must be installed)

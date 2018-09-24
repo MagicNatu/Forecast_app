@@ -1,156 +1,223 @@
 package main
 
 import (
-	"log"
-	"fmt"
-	"os"
 	"encoding/json"
+	"fmt"
+	"html/template"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
+
+	"github.com/gorilla/mux"
 )
 
-// Defining key environment variable in order to access weather data from openweathermap.org
+//Defining key environment variable in order to access weather data from openweathermap.org
+//Also defining slices, structs and map to store retrieved data
 
 var setenv = os.Setenv("OWM_API_KEY", "ae109bfa9bd34e64691b5b467fe631eb")
 var apiKey = os.Getenv("OWM_API_KEY")
+var cities []string
+var locMap map[string]current
+var g current
+var f forecast
+var maxTemp []float64
+var minTemp []float64
 
-// Retrieves forecast data from openweathermap.org, takes location and amount of days as arguments. Structs defined in forecast.go
+func main() {
+	router := mux.NewRouter()
+	router.HandleFunc("/forecast/", getfcData).Methods("POST")
+	router.HandleFunc("/main", firstPage).Methods("POST", "GET")
+	router.HandleFunc("/current/", getCdata).Methods("POST", "GET")
 
-func GetForecast(location string, days int) forecast {
-	var f ForecastWeatherData
+	router.HandleFunc("/forecast/{city}/{days}", jsonFCdata).Methods("GET")
+	router.HandleFunc("/current/{city}", jsonCdata).Methods("GET")
+
+	log.Fatal(http.ListenAndServe(":8000", router))
+}
+
+//the firstPage function represents the initial page when a user navigates to
+//{host}, port 8000
+func firstPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/main" { //if url != localhost:8000/main
+		http.Error(w, "404 not found.", http.StatusNotFound) //throw error
+		return
+	}
+	switch r.Method {
+	case "GET": //if http method == "GET"
+		http.ServeFile(w, r, "index.html")
+	case "POST": //if http method == "POST"
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+			return
+		}
+		location := r.FormValue("location")
+		if location == "" {
+			http.Redirect(w, r, "/main", http.StatusSeeOther)
+			break
+		}
+		max := r.FormValue("max_temp")
+		min := r.FormValue("min_temp")
+		maxx, _ := strconv.ParseFloat(max, 64)
+		minn, _ := strconv.ParseFloat(min, 64)
+		cities = append(cities, location) //load slices with form values so they can be used later
+		maxTemp = append(maxTemp, maxx)
+		minTemp = append(minTemp, minn)
+		http.Redirect(w, r, "/current/", http.StatusSeeOther)
+	default:
+		fmt.Fprintf(w, "Sorry, only GET and POST methods are supported.")
+	}
+}
+
+//Function to delete a location that no longer requires monitoring
+func deleteLocation(location string) {
+	for i := 0; i < len(cities); i++ {
+		if cities[i] == location {
+			cities = append(cities[:i], cities[i+1:]...)
+			maxTemp = append(maxTemp[:i], maxTemp[i+1:]...)
+			minTemp = append(minTemp[:i], minTemp[i+1:]...)
+		}
+	}
+}
+
+// Writing current weather data to router.
+//Executes template with a loaded map datastructure (locMap)
+//locMap is loaded with a Current{} struct
+//Template is loaded so we can access data from structs in html
+func getCdata(w http.ResponseWriter, r *http.Request) {
+	locMap = map[string]current{}
+
+	for i := 0; i < len(cities); i++ {
+		g.updateCurrentWeather(cities[i])
+		g.Userminmax.Usermax = maxTemp[i]
+		g.Userminmax.Usermin = minTemp[i]
+		locMap[cities[i]] = g //loading map with entire current struct and corresponding citydata
+	}
+
+	switch r.Method {
+	case "GET":
+		t, err := template.ParseFiles("AddLocation.html")
+		if err != nil { // if there is an error
+			log.Print("template parsing error: ", err) // log it
+		}
+		err = t.Execute(w, locMap)
+	case "POST":
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+			return
+		}
+		dl := r.FormValue("delete")
+		deleteLocation(dl)
+		http.Redirect(w, r, "/current/", 303)
+	default:
+		fmt.Fprintf(w, "Sorry, only GET and POST methods are supported.")
+	}
+}
+
+//Writing forecast weather data to router.
+//Executes template with a loaded map datastructure
+func getfcData(w http.ResponseWriter, r *http.Request) {
+	forecastMap := map[string][]forecastWeatherList{}
+	showTimeSlice := []forecastWeatherList{}
+	switch r.Method {
+	case "POST":
+		t, err := template.ParseFiles("Forecast.html")
+		if err != nil { //catch error
+			log.Print("template parsing error: ", err) //log the error
+		}
+		days := r.FormValue("amt_days") //Loading variables with data from form
+		daysInt, _ := strconv.Atoi(days)
+		time := r.FormValue("time")
+		for i := 0; i < len(cities); i++ {
+			f.updateForecast(cities[i], daysInt)
+			for j := 0; j < f.Days; j++ {
+				if strings.Contains(f.List[j].Date, time) {
+					f.List[j].Userminmax.Usermax = maxTemp[i]
+					f.List[j].Userminmax.Usermin = minTemp[i]
+					showTimeSlice = append(showTimeSlice, f.List[j])
+				}
+			}
+			forecastMap[cities[i]] = showTimeSlice //loading forecastMap with a slice of type []ForecastWEatherList{}
+			showTimeSlice = nil                    //setting slice to nil in order to clear slice for next run
+		}
+
+		err = t.Execute(w, forecastMap) //Executing template and loading it with forecastMap
+		if err != nil {                 //catch error
+			log.Print("template execute error: ", err) //log the error
+		}
+	default:
+		fmt.Fprintf(w, "Sorry, only GET and POST methods are supported.")
+	}
+}
+
+//Function to update currentTemp by calling getCurrent(City)
+//Receiver is a pointervalue to a Current struct
+func (c *current) updateCurrentWeather(City string) {
+	updatedWeather := getCurrent(City)
+	(*c) = updatedWeather
+}
+
+//Similar function to update forecastweather
+func (f *forecast) updateForecast(City string, Days int) {
+	updatedForecast := getForecast(City, Days)
+	(*f) = updatedForecast
+}
+
+// Retrieves forecast data from openweathermap.org,
+//takes location and amount of days as arguments. Structs defined in forecast.go
+func getForecast(location string, days int) forecast {
+	var f forecastWeatherData
 	f = NewWeatherData("metric", "EN")
-	actual_days := (days*8)+3
-	days_string := strconv.Itoa(actual_days)
-	response, err := http.Get(fmt.Sprintf("%s%s&appid=%s&units=%s&lang=%s&cnt=%s",f.baseURL,location,f.Key, f.Unit,f.Lang, days_string))
-	 if err != nil {
+	actualDays := (days * 8) //days represent a forecast for every 3rd hour. actualDays converts it into a whole day
+	daysString := strconv.Itoa(actualDays)
+	response, err := http.Get(fmt.Sprintf("%s%s&appid=%s&units=%s&lang=%s&cnt=%s", f.baseURL, location, f.Key, f.Unit, f.Lang, daysString))
+	if err != nil {
 		panic(err)
 	}
 	defer response.Body.Close()
-	
+
 	forecastData := forecast{}
 	err = json.NewDecoder(response.Body).Decode(&forecastData)
 	if err != nil {
-        panic(err)
-    }
-	
+		panic(err)
+	}
+
 	return forecastData
 }
 
-// retrieves current weather data from openweathermap.org, returns a current struct. Structs defined in currentWeather.go.
- 
-func GetCurrent(location string) Current {
-	var c CurrentWeatherData
+// retrieves current weather data from openweathermap.org, returns a current struct.
+// Structs defined in currentWeather.go.
+
+func getCurrent(location string) current {
+	var c currentWeatherData
 	c = NewCurrentWeatherData("metric", "EN")
-	response, err := http.Get(fmt.Sprintf("%s%s&appid=%s&units=%s&lang=%s&cnt=%s",c.baseURL,location,c.Key, c.Unit,c.Lang))
-	 if err != nil {
+	response, err := http.Get(fmt.Sprintf("%s%s&appid=%s&units=%s&lang=%s", c.baseURL, location, c.Key, c.Unit, c.Lang))
+	if err != nil {
 		panic(err)
 	}
 	defer response.Body.Close()
-	
-	currentData := Current{}
+
+	currentData := current{}
 	err = json.NewDecoder(response.Body).Decode(&currentData)
 	if err != nil {
-        panic(err)
-    }
+		panic(err)
+	}
+
 	return currentData
 }
 
-// Function to flush variables in order to avoid bugs in logline
-
-func flush(f string) {
-	f = ""
-	fmt.Scanf("%s", &f)
+//Provides current weather api data for any given location in json format
+func jsonCdata(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	g := getCurrent(params["city"])
+	json.NewEncoder(w).Encode(g)
 }
 
-// Wraps functionality by printing the requested forecast and current weather data
-
-func printOutput() {
-	var location string
-	var max, min, amt_days, frequency string
-
-	for true {
-		fmt.Print("Enter a city, or exit by typing exit: ")
-		fmt.Scanf("%s", &location)
-		if location == "exit" {
-			os.Exit(0)
-	}
-		flush(location)
-		fmt.Print("For how many days do you want to monitor the temp? (max 5) ")
-		fmt.Scanf("%s", &amt_days)
-		
-		amt_days_int, err := strconv.ParseInt(amt_days, 10, 32) 
-			if err != nil {
-			log.Fatalln(err)
-	}
-		if amt_days_int > 5 {
-			fmt.Println("Max 5!!")
-			continue
-		}
-		flush(amt_days)
-		fmt.Print("Enter max temp: ")
-		fmt.Scanf("%s", &max)
-		flush(max)
-		fmt.Print("Enter min temp: ")
-		fmt.Scanf("%s", &min)
-		flush(min)
-		fmt.Print("What is the frequency of check? Valid inputs: 3,6,9,12,15,18,21,24 (In hours)")
-		fmt.Scanf("%s", &frequency)
-		frequency_int, err := strconv.ParseInt(frequency, 10, 32) 
-			if err != nil {
-			log.Fatalln(err)
-		}
-			flush(frequency)
-			
-			if (frequency_int % 3) == 0 && frequency_int <= 24 {
-			} else {
-				fmt.Println("Invalid input")
-				continue
-			}		
-		 	if location != "" {
-			var c Current = GetCurrent(location)
-			fmt.Printf("Current temp for %s is %f degrees celcius\n\n",location, c.Main.CurrentTemp)
-			
-			days, err := strconv.Atoi(amt_days)
-			if err != nil {
-			log.Fatalln(err)	
-	}
-			
-			var f forecast = GetForecast(location, days)
-			
-			min_float64, err := strconv.ParseFloat(min, 64) 
-			if err != nil {
-			log.Fatalln(err)
-		
-	}
-			max_float64, err := strconv.ParseFloat(max, 64) 
-			if err != nil {
-			log.Fatalln(err)
-		
-	}
-			
-			fmt.Println("The forecast data for the next", f.Days/8, "day(s) accoring to max temp and min temp is as follows:\n")
-			var freq int
-			freq = int(frequency_int)
-			freq = freq/3
-			
-			for i := 1; i<f.Days; i = i+freq {
-				if f.List[i].Main.Temp_min < min_float64 {
-				fmt.Printf("Temperature for %v is minimum: %f degrees and is less than specified min temp %s\n", f.List[i].Date, f.List[i].Main.Temp_min, min)
-				}
-				if f.List[i].Main.Temp_max > max_float64 {
-				fmt.Printf("Temperature for %v is maximum: %f degrees and is more than specified max temp %s\n", f.List[i].Date, f.List[i].Main.Temp_max, max)
-				}
-				if (f.List[i].Main.Temp_min >= min_float64) && (f.List[i].Main.Temp_max <= max_float64) {
-					fmt.Printf("Min & max temperature for %v is within specified limits; average temp is %f: \n", f.List[i].Date, f.List[i].Main.Avg_Temp)
-				}
-			}
-			
-			flush(location)
-			
-		}
-	}
-}
-
-func main() {
-	printOutput()
+//Provides forecast weather api data for any given location in json format
+func jsonFCdata(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	days, _ := strconv.Atoi(params["days"])
+	g := getForecast(params["city"], days)
+	json.NewEncoder(w).Encode(g)
 }

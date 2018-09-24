@@ -1,23 +1,35 @@
 package main
 
-// Defining structs to store recieved JSON data in.
+//stores user input data: minimum and maximum temperatures for
+// a given location
 
-import (
-)
-type CurrentWeatherData struct {
+type minmaxTemp struct {
+	Usermax float64
+	Usermin float64
+}
+
+// Defining structs to store received JSON data in.
+
+type currentWeatherData struct {
 	Unit    string
 	Lang    string
 	Key     string
 	baseURL string
 }
-type Current struct {
-	Main CurrentWeather `json:"main"`
+type current struct {
+	Main       currentWeather `json:"main"`
+	CityName   string         `json:"name"`
+	Userminmax minmaxTemp
+	Message    string `json:"message"`
 }
-type CurrentWeather struct {
+
+type currentWeather struct {
 	CurrentTemp float64 `json:"temp"`
 }
-func NewCurrentWeatherData(unit string, lang string) CurrentWeatherData {
-	data := CurrentWeatherData{}
+
+// loads currentWeatherData struct with data
+func NewCurrentWeatherData(unit string, lang string) currentWeatherData {
+	data := currentWeatherData{}
 	data.Key = apiKey
 	data.Lang = lang
 	data.Unit = unit

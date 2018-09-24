@@ -90,6 +90,11 @@ func getCdata(w http.ResponseWriter, r *http.Request) {
 
 	for i := 0; i < len(cities); i++ {
 		g.updateCurrentWeather(cities[i])
+		if g.Message == "city not found" {
+			http.Error(w, "Location not found!", http.StatusNotFound)
+			deleteLocation(cities[i])
+			return
+		}
 		g.Userminmax.Usermax = maxTemp[i]
 		g.Userminmax.Usermin = minTemp[i]
 		locMap[cities[i]] = g //loading map with entire current struct and corresponding citydata

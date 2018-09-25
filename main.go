@@ -21,19 +21,22 @@ var apiKey = os.Getenv("OWM_API_KEY")
 var cities []string
 var locMap map[string]current
 var forecastMap map[string][]forecastWeatherList
-
+var jSONforecastMap map[string][]forecast
 var g current
 var f forecast
 var maxTemp []float64
 var minTemp []float64
 
+// Defining routes and initializing router
 func main() {
+	jSONforecastMap = map[string][]forecast{} //Initializing map to store JSON data from RESTapi endpoint
 	router := mux.NewRouter()
 	router.HandleFunc("/forecast/", getfcData).Methods("POST")
 	router.HandleFunc("/main", firstPage).Methods("POST", "GET")
 	router.HandleFunc("/current/", getCdata).Methods("POST", "GET")
 
-	router.HandleFunc("/forecast/{city}/{days}", jsonFCdata).Methods("GET")
+	router.HandleFunc("/forecast/{city}/{days}", addJSONfcdata).Methods("POST", "GET")
+	router.HandleFunc("/JSONforecast", jsonFCdata).Methods("GET")
 	router.HandleFunc("/forecast/for/all/days", showForecastJSONdata).Methods("GET")
 	router.HandleFunc("/current/all/cities", showCurrentJSONdata).Methods("GET")
 
@@ -223,11 +226,18 @@ func showForecastJSONdata(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(forecastMap)
 }
 
-//Represents endpoint for fetching weather data from any location
+//Represents endpoint for adding weather data from any location.
 //accessible from localhost:8000/forecast/{city}/{days}
-func jsonFCdata(w http.ResponseWriter, r *http.Request) {
+func addJSONfcdata(w http.ResponseWriter, r *http.Request) {
+	var fc forecast
 	params := mux.Vars(r)
 	days, _ := strconv.Atoi(params["days"])
-	g := getForecast(params["city"], days)
-	json.NewEncoder(w).Encode(g)
+	fc.updateForecast(params["city"], days)
+	_ = json.NewDecoder(r.Body).Decode(&jSONforecastMap)
+	jSONforecastMap[params["city"]] = append(jSONforecastMap[params["city"]], fc)
+}
+
+//Shows the JSON data added from addJSONfcdata endpoint
+func jsonFCdata(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(jSONforecastMap)
 }

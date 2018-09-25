@@ -11,7 +11,7 @@ Go build
 
 To access the application UI, navigate to "localhost:8000/main".
 
-JSON data is available from links within the application. It is also possible to add locations from an endpoint, by navigating to "localhost:8000/forecast/{add_location}/{days}/{min_temp}/{max_temp}"
+JSON data is available from links within the application. It is also possible to add locations from an endpoint, by navigating to "localhost:8000/forecast/{add_location}/{days}"
 
 Forecast data is available for days <= 5.
 

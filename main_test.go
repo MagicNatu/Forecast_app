@@ -1,7 +1,7 @@
 package main
 
 /* The purpose here is to test all functions related to this app. TODO: Create
-tests for jsonCdata, jsonFCdata, getCdata and getFCdata */
+tests for showCurrentJSONdata, jsonFCdata, showForecastJSONdata */
 
 import (
 	"net/http"

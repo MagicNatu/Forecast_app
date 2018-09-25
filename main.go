@@ -20,6 +20,8 @@ var setenv = os.Setenv("OWM_API_KEY", "ae109bfa9bd34e64691b5b467fe631eb")
 var apiKey = os.Getenv("OWM_API_KEY")
 var cities []string
 var locMap map[string]current
+var forecastMap map[string][]forecastWeatherList
+
 var g current
 var f forecast
 var maxTemp []float64
@@ -32,7 +34,8 @@ func main() {
 	router.HandleFunc("/current/", getCdata).Methods("POST", "GET")
 
 	router.HandleFunc("/forecast/{city}/{days}", jsonFCdata).Methods("GET")
-	router.HandleFunc("/current/{city}", jsonCdata).Methods("GET")
+	router.HandleFunc("/forecast/for/all/days", showForecastJSONdata).Methods("GET")
+	router.HandleFunc("/current/all/cities", showCurrentJSONdata).Methods("GET")
 
 	log.Fatal(http.ListenAndServe(":8000", router))
 }
@@ -98,6 +101,7 @@ func getCdata(w http.ResponseWriter, r *http.Request) {
 		g.Userminmax.Usermax = maxTemp[i]
 		g.Userminmax.Usermin = minTemp[i]
 		locMap[cities[i]] = g //loading map with entire current struct and corresponding citydata
+
 	}
 
 	switch r.Method {
@@ -123,7 +127,7 @@ func getCdata(w http.ResponseWriter, r *http.Request) {
 //Writing forecast weather data to router.
 //Executes template with a loaded map datastructure
 func getfcData(w http.ResponseWriter, r *http.Request) {
-	forecastMap := map[string][]forecastWeatherList{}
+	forecastMap = map[string][]forecastWeatherList{}
 	showTimeSlice := []forecastWeatherList{}
 	switch r.Method {
 	case "POST":
@@ -187,13 +191,11 @@ func getForecast(location string, days int) forecast {
 	if err != nil {
 		panic(err)
 	}
-
 	return forecastData
 }
 
 // retrieves current weather data from openweathermap.org, returns a current struct.
 // Structs defined in currentWeather.go.
-
 func getCurrent(location string) current {
 	var c currentWeatherData
 	c = NewCurrentWeatherData("metric", "EN")
@@ -208,18 +210,21 @@ func getCurrent(location string) current {
 	if err != nil {
 		panic(err)
 	}
-
 	return currentData
 }
 
-//Provides current weather api data for any given location in json format
-func jsonCdata(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
-	g := getCurrent(params["city"])
-	json.NewEncoder(w).Encode(g)
+//Provides current JSON data for n locations
+func showCurrentJSONdata(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(locMap)
 }
 
-//Provides forecast weather api data for any given location in json format
+//provides forecast JSON data for n locations and n<5 days.
+func showForecastJSONdata(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(forecastMap)
+}
+
+//Represents endpoint for fetching weather data from any location
+//accessible from localhost:8000/forecast/{city}/{days}
 func jsonFCdata(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	days, _ := strconv.Atoi(params["days"])

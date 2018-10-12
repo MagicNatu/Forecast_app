@@ -1,14 +1,12 @@
 # use an existing docker image as a base
-FROM golang:alpine as builtapp
-#Installing additional tools for the container
+FROM golang:1.11.1 as builder
+#Installing additional tools/dependencies for the container
 WORKDIR '/go/src/app'
 COPY . .
-RUN apk add --no-cache git mercurial \
-   && go get -d -v github.com/tools/godep \
-   && apk del git mercurial
-RUN go install
-#Commands, run at container startup
-CMD ["app"]
+RUN go get -d -v github.com/tools/godep
+RUN go test -c -o /out/tests 
+RUN go build -o /out/runme
+CMD ["/out/runme"]
 
 
 #CMD COMMANDS------------------------------------------
